@@ -19,8 +19,7 @@ bool SmyshlaevAConjGradTaskSEQ::ValidationImpl() {
 }
 
 bool SmyshlaevAConjGradTaskSEQ::PreProcessingImpl() {
-  GetOutput() = 2 * GetInput();
-  return GetOutput() > 0;
+  return true;
 }
 
 bool SmyshlaevAConjGradTaskSEQ::RunImpl() {
