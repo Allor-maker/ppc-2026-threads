@@ -84,11 +84,11 @@ bool SmyshlaevASleCgTaskOMP::PreProcessingImpl() {
 }
 
 bool SmyshlaevASleCgTaskOMP::RunImpl() {
-  std::vector<double> v_test1 = {1.0, 2.0, 3.0, 4.0};
+  std::vector<double> v_test1 = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0};
 
   double test_result = 0.0;
-  int s = 4;
-  int ind;
+  int s = 10;
+  int ind = 0;
 #pragma omp parallel for default(none) private(ind) shared(s, v_test1) schedule(static) reduction(+ : test_result)
   for (ind = 0; ind < s; ++ind) {
     test_result += v_test1[ind] * v_test1[ind];
