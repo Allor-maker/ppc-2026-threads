@@ -37,7 +37,7 @@ double UpdateResultAndResidual(std::vector<double> &result, std::vector<double> 
                                const std::vector<double> &ap, double alpha) {
   double rs_new = 0.0;
   size_t n = result.size();
-#pragma omp parallel for default(none) shared(result, r, p, ap, alpha) schedule(static) reduction(+ : rs_new)
+#pragma omp parallel for default(none) shared(result, r, p, ap, alpha, n) schedule(static) reduction(+ : rs_new)
   for (size_t i = 0; i < n; ++i) {
     result[i] += alpha * p[i];
     r[i] -= alpha * ap[i];
