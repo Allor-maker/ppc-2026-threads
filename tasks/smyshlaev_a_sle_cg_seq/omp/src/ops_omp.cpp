@@ -90,7 +90,7 @@ bool SmyshlaevASleCgTaskOMP::RunImpl() {
   int s = 10;
   int ind = 0;
   int chunk = 1;
-#pragma omp parallel for default(none) private(ind) shared(s, v_test1) schedule(static, chunk) \
+#pragma omp parallel for default(none) private(ind) shared(s, v_test1, chunk) schedule(static, chunk) \
     reduction(+ : test_result)
   for (ind = 0; ind < s; ++ind) {
     test_result += v_test1[ind] * v_test1[ind];
