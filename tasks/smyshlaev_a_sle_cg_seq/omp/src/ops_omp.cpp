@@ -49,7 +49,7 @@ double UpdateResultAndResidual(std::vector<double> &result, std::vector<double> 
 
 void UpdateP(std::vector<double> &p, const std::vector<double> &r, double beta) {
   size_t n = p.size();
-#pragma omp simd
+#pragma omp parallel for schedule(static)
   for (size_t i = 0; i < n; ++i) {
     p[i] = r[i] + (beta * p[i]);
   }
