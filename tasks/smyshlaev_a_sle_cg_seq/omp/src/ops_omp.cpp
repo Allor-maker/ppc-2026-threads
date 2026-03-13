@@ -2,12 +2,11 @@
 
 #include <omp.h>
 
-#include <atomic>
-#include <numeric>
+#include <cmath>
+#include <cstddef>
 #include <vector>
 
 #include "smyshlaev_a_sle_cg_seq/common/include/common.hpp"
-#include "util/include/util.hpp"
 
 namespace smyshlaev_a_sle_cg_seq {
 
@@ -16,7 +15,7 @@ namespace {
 double ComputeDotProduct(const std::vector<double> &v1, const std::vector<double> &v2) {
   double result = 0.0;
   size_t n = v1.size();
-#pragma omp parallel for schedule(static) reduction(+ : result)
+#pragma omp parallel default(none) shared(v1, v2, n) for schedule(static) reduction(+ : result)
   for (size_t i = 0; i < n; ++i) {
     result += v1[i] * v2[i];
   }
@@ -24,7 +23,7 @@ double ComputeDotProduct(const std::vector<double> &v1, const std::vector<double
 }
 
 void ComputeAp(const std::vector<double> &matrix, const std::vector<double> &p, std::vector<double> &ap, size_t n) {
-#pragma omp parallel for schedule(static)
+#pragma omp parallel default(none) shared(matrix, p, ap, n) for schedule(static)
   for (size_t i = 0; i < n; ++i) {
     double sum = 0.0;
     for (size_t j = 0; j < n; ++j) {
@@ -38,7 +37,7 @@ double UpdateResultAndResidual(std::vector<double> &result, std::vector<double> 
                                const std::vector<double> &ap, double alpha) {
   double rs_new = 0.0;
   size_t n = result.size();
-#pragma omp parallel for schedule(static) reduction(+ : rs_new)
+#pragma omp parallel default(none) shared(result, rs_new, r, p, ap, alpha) for schedule(static) reduction(+ : rs_new)
   for (size_t i = 0; i < n; ++i) {
     result[i] += alpha * p[i];
     r[i] -= alpha * ap[i];
@@ -49,7 +48,7 @@ double UpdateResultAndResidual(std::vector<double> &result, std::vector<double> 
 
 void UpdateP(std::vector<double> &p, const std::vector<double> &r, double beta) {
   size_t n = p.size();
-#pragma omp parallel for schedule(static)
+#pragma omp parallel default(none) shared(p, r, beta, n) for schedule(static)
   for (size_t i = 0; i < n; ++i) {
     p[i] = r[i] + (beta * p[i]);
   }

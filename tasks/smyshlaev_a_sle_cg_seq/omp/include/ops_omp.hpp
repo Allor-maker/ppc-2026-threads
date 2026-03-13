@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include "smyshlaev_a_sle_cg_seq/common/include/common.hpp"
 #include "task/include/task.hpp"
 
