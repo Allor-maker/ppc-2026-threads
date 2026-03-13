@@ -91,7 +91,6 @@ bool SmyshlaevASleCgTaskOMP::PreProcessingImpl() {
 }
 
 bool SmyshlaevASleCgTaskOMP::RunImpl() {
-
   const auto &b = GetInput().b;
   size_t n = b.size();
 
