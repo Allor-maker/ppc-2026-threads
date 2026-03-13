@@ -139,6 +139,7 @@ bool SmyshlaevASleCgTaskOMP::RunImpl() {
 }
 
 bool SmyshlaevASleCgTaskOMP::PostProcessingImpl() {
+  omp_pause_resource_all(omp_pause_hard);
   return true;
 }
 
