@@ -91,8 +91,7 @@ bool SmyshlaevASleCgTaskOMP::PreProcessingImpl() {
 }
 
 bool SmyshlaevASleCgTaskOMP::RunImpl() {
-  int num_threads = ppc::util::GetNumThreads();
-  omp_set_num_threads(num_threads);
+
   const auto &b = GetInput().b;
   size_t n = b.size();
 
