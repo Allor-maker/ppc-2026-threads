@@ -15,7 +15,7 @@ namespace {
 double ComputeDotProduct(const std::vector<double> &v1, const std::vector<double> &v2) {
   double result = 0.0;
   size_t n = v1.size();
-#pragma omp parallel for default(none) shared(v1, v2, n) schedule(static) reduction(+ : result)
+  // #pragma omp parallel for default(none) shared(v1, v2, n) schedule(static) reduction(+ : result)
   for (size_t i = 0; i < n; ++i) {
     result += v1[i] * v2[i];
   }
@@ -37,7 +37,7 @@ double UpdateResultAndResidual(std::vector<double> &result, std::vector<double> 
                                const std::vector<double> &ap, double alpha) {
   double rs_new = 0.0;
   size_t n = result.size();
-#pragma omp parallel for default(none) shared(result, r, p, ap, alpha, n) schedule(static) reduction(+ : rs_new)
+  // #pragma omp parallel for default(none) shared(result, r, p, ap, alpha, n) schedule(static) reduction(+ : rs_new)
   for (size_t i = 0; i < n; ++i) {
     result[i] += alpha * p[i];
     r[i] -= alpha * ap[i];
@@ -48,7 +48,7 @@ double UpdateResultAndResidual(std::vector<double> &result, std::vector<double> 
 
 void UpdateP(std::vector<double> &p, const std::vector<double> &r, double beta) {
   size_t n = p.size();
-#pragma omp parallel for default(none) shared(p, r, beta, n) schedule(static)
+  // #pragma omp parallel for default(none) shared(p, r, beta, n) schedule(static)
   for (size_t i = 0; i < n; ++i) {
     p[i] = r[i] + (beta * p[i]);
   }
