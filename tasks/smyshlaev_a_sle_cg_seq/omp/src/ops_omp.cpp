@@ -12,18 +12,9 @@ namespace smyshlaev_a_sle_cg_seq {
 
 namespace {
 
-double ComputeDotProduct(const std::vector<double> &v1, const std::vector<double> &v2) {
-  double result = 0.0;
-  size_t n = v1.size();
-  // #pragma omp parallel for default(none) shared(v1, v2, n) schedule(static) reduction(+ : result)
-  for (size_t i = 0; i < n; ++i) {
-    result += v1[i] * v2[i];
-  }
-  return result;
-}
-
-void ComputeAp(const std::vector<double> &matrix, const std::vector<double> &p, std::vector<double> &ap, size_t n) {
-#pragma omp parallel for default(none) shared(matrix, p, ap, n) schedule(static)
+// Функции вызываются ИЗНУТРИ многопоточной зоны, поэтому внутри них только `omp for`
+void ComputeAp_OMP(const std::vector<double> &matrix, const std::vector<double> &p, std::vector<double> &ap, size_t n) {
+#pragma omp for schedule(static)
   for (size_t i = 0; i < n; ++i) {
     double sum = 0.0;
     for (size_t j = 0; j < n; ++j) {
@@ -33,22 +24,26 @@ void ComputeAp(const std::vector<double> &matrix, const std::vector<double> &p, 
   }
 }
 
-double UpdateResultAndResidual(std::vector<double> &result, std::vector<double> &r, const std::vector<double> &p,
-                               const std::vector<double> &ap, double alpha) {
-  double rs_new = 0.0;
-  size_t n = result.size();
-  // #pragma omp parallel for default(none) shared(result, r, p, ap, alpha, n) schedule(static) reduction(+ : rs_new)
+// Используем классический reduction для переменной result_val (которая передается по ссылке)
+void ComputeDotProduct_OMP(const std::vector<double> &v1, const std::vector<double> &v2, double &result_val, size_t n) {
+#pragma omp for schedule(static) reduction(+ : result_val)
   for (size_t i = 0; i < n; ++i) {
-    result[i] += alpha * p[i];
+    result_val += v1[i] * v2[i];
+  }
+}
+
+void UpdateResultAndResidual_OMP(std::vector<double> &result_vec, std::vector<double> &r, const std::vector<double> &p,
+                                 const std::vector<double> &ap, double alpha, double &rs_new, size_t n) {
+#pragma omp for schedule(static) reduction(+ : rs_new)
+  for (size_t i = 0; i < n; ++i) {
+    result_vec[i] += alpha * p[i];
     r[i] -= alpha * ap[i];
     rs_new += r[i] * r[i];
   }
-  return rs_new;
 }
 
-void UpdateP(std::vector<double> &p, const std::vector<double> &r, double beta) {
-  size_t n = p.size();
-  // #pragma omp parallel for default(none) shared(p, r, beta, n) schedule(static)
+void UpdateP_OMP(std::vector<double> &p, const std::vector<double> &r, double beta, size_t n) {
+#pragma omp for schedule(static)
   for (size_t i = 0; i < n; ++i) {
     p[i] = r[i] + (beta * p[i]);
   }
@@ -102,7 +97,11 @@ bool SmyshlaevASleCgTaskOMP::RunImpl() {
   std::vector<double> ap(n, 0.0);
   std::vector<double> result(n, 0.0);
 
-  double rs_old = ComputeDotProduct(r, r);
+  // Вычисляем начальное rs_old последовательно, до старта потоков
+  double rs_old = 0.0;
+  for (size_t i = 0; i < n; ++i) {
+    rs_old += r[i] * r[i];
+  }
 
   const int max_iterations = static_cast<int>(n) * 2;
   const double epsilon = 1e-9;
@@ -112,26 +111,59 @@ bool SmyshlaevASleCgTaskOMP::RunImpl() {
     return true;
   }
 
-  for (int iter = 0; iter < max_iterations; ++iter) {
-    ComputeAp(flat_A_, p, ap, n);
+  // Общие (shared) переменные для синхронизации и хранения промежуточных вычислений
+  double p_ap = 0.0;
+  double rs_new = 0.0;
+  double alpha = 0.0;
+  double beta = 0.0;
+  bool converged = false;
 
-    double p_ap = ComputeDotProduct(p, ap);
+  // ОДИН вызов создания пула потоков на весь метод (снимает проблемы с утечками в libomp)
+#pragma omp parallel default(none) \
+    shared(n, r, p, ap, result, flat_A_, rs_old, p_ap, rs_new, alpha, beta, converged, max_iterations, epsilon)
+  {
+    for (int iter = 0; iter < max_iterations; ++iter) {
+      // Только один поток обнуляет переменную перед новой итерацией (остальные ждут на барьере)
+#pragma omp single
+      p_ap = 0.0;
 
-    if (std::abs(p_ap) < 1e-15) {
-      break;
+      ComputeAp_OMP(flat_A_, p, ap, n);
+      // Внутри используется reduction, который соберет суммы со всех потоков в p_ap
+      ComputeDotProduct_OMP(p, ap, p_ap, n);
+
+#pragma omp single
+      {
+        if (std::abs(p_ap) < 1e-15) {
+          converged = true;
+        } else {
+          alpha = rs_old / p_ap;
+        }
+        rs_new = 0.0;  // Обнуляем перед следующим reduction
+      }
+
+      // Все потоки проверяют флаг, и если нужно — выходят
+      if (converged) {
+        break;
+      }
+
+      UpdateResultAndResidual_OMP(result, r, p, ap, alpha, rs_new, n);
+
+#pragma omp single
+      {
+        if (std::sqrt(rs_new) < epsilon) {
+          converged = true;
+        } else {
+          beta = rs_new / rs_old;
+          rs_old = rs_new;
+        }
+      }
+
+      if (converged) {
+        break;
+      }
+
+      UpdateP_OMP(p, r, beta, n);
     }
-
-    double alpha = rs_old / p_ap;
-    double rs_new = UpdateResultAndResidual(result, r, p, ap, alpha);
-
-    if (std::sqrt(rs_new) < epsilon) {
-      break;
-    }
-
-    double beta = rs_new / rs_old;
-    UpdateP(p, r, beta);
-
-    rs_old = rs_new;
   }
 
   GetOutput() = result;
@@ -139,7 +171,6 @@ bool SmyshlaevASleCgTaskOMP::RunImpl() {
 }
 
 bool SmyshlaevASleCgTaskOMP::PostProcessingImpl() {
-  omp_pause_resource_all(omp_pause_hard);
   return true;
 }
 
