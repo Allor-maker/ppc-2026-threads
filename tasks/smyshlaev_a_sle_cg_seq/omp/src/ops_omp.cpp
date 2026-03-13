@@ -98,36 +98,48 @@ bool SmyshlaevASleCgTaskOMP::RunImpl() {
     GetOutput() = result;
     return true;
   }
+
   const std::vector<double> &local_a = flat_A_;
-  for (int iter = 0; iter < max_iterations; ++iter) {
-    // БЕЗУСЛОВНО выполняем самую тяжелую операцию (O(N^2)) параллельно
-#pragma omp parallel for default(none) shared(n, local_a, p, ap) schedule(static)
-    for (int i = 0; i < n; ++i) {
-      double sum = 0.0;
-      for (int j = 0; j < n; ++j) {
-        sum += local_a[(i * n) + j] * p[j];
+  double p_ap = 0.0;
+  double rs_new = 0.0;
+  double alpha = 0.0;
+  double beta = 0.0;
+  bool converged = false;
+#pragma omp parallel default(none) \
+    shared(local_a, n, r, p, ap, result, rs_old, p_ap, rs_new, alpha, beta, converged, max_iterations, epsilon)
+  {
+    for (int iter = 0; iter < max_iterations; ++iter) {
+#pragma omp for schedule(static)
+      for (int i = 0; i < n; ++i) {
+        double sum = 0.0;
+        for (int j = 0; j < n; ++j) {
+          sum += local_a[(i * n) + j] * p[j];
+        }
+        ap[i] = sum;
       }
-      ap[i] = sum;
+
+#pragma omp single
+      {
+        p_ap = ComputeDotProduct(p, ap);
+        if (std::abs(p_ap) < 1e-15) {
+          converged = true;
+        } else {
+          alpha = rs_old / p_ap;
+          rs_new = UpdateResultAndResidual(result, r, p, ap, alpha);
+
+          if (std::sqrt(rs_new) < epsilon) {
+            converged = true;
+          } else {
+            beta = rs_new / rs_old;
+            UpdateP(p, r, beta);
+            rs_old = rs_new;
+          }
+        }
+      }
+      if (converged) {
+        break;
+      }
     }
-
-    // Остальные операции (O(N)) считаются через вызовы функций
-    double p_ap = ComputeDotProduct(p, ap);
-
-    if (std::abs(p_ap) < 1e-15) {
-      break;
-    }
-
-    double alpha = rs_old / p_ap;
-    double rs_new = UpdateResultAndResidual(result, r, p, ap, alpha);
-
-    if (std::sqrt(rs_new) < epsilon) {
-      break;
-    }
-
-    double beta = rs_new / rs_old;
-    UpdateP(p, r, beta);
-
-    rs_old = rs_new;
   }
 
   GetOutput() = result;
