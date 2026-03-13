@@ -12,38 +12,39 @@ namespace smyshlaev_a_sle_cg_seq {
 
 namespace {
 
-// Последовательные вспомогательные функции (O(N)) - просто и надежно
 double ComputeDotProduct(const std::vector<double> &v1, const std::vector<double> &v2) {
-  double res = 0.0;
-  const size_t n = v1.size();
-  for (size_t i = 0; i < n; ++i) {
-    res += v1[i] * v2[i];
+  double result = 0.0;
+  int n = static_cast<int>(v1.size());
+  for (int i = 0; i < n; ++i) {
+    result += v1[i] * v2[i];
   }
-  return res;
+  return result;
 }
-
-double UpdateRes(std::vector<double> &x, std::vector<double> &r, const std::vector<double> &p,
-                 const std::vector<double> &ap, double alpha) {
-  double rs_new = 0.0;
-  const size_t n = x.size();
+void ComputeAp(const std::vector<double> &matrix, const std::vector<double> &p, std::vector<double> &ap, size_t n) {
   for (size_t i = 0; i < n; ++i) {
-    x[i] += alpha * p[i];
+    double sum = 0.0;
+    for (size_t j = 0; j < n; ++j) {
+      sum += matrix[(i * n) + j] * p[j];
+    }
+    ap[i] = sum;
+  }
+}
+double UpdateResultAndResidual(std::vector<double> &result, std::vector<double> &r, const std::vector<double> &p,
+                               const std::vector<double> &ap, double alpha) {
+  double rs_new = 0.0;
+  int n = static_cast<int>(result.size());
+  for (int i = 0; i < n; ++i) {
+    result[i] += alpha * p[i];
     r[i] -= alpha * ap[i];
     rs_new += r[i] * r[i];
   }
   return rs_new;
 }
 
-// Параллельное умножение матрицы на вектор (O(N^2))
-// Используем сырые указатели, чтобы Valgrind и MSVC не ругались
-void MultiplyParallel(const double *mat, const double *p, double *ap, int n) {
-#pragma omp parallel for default(none) shared(mat, p, ap, n) schedule(static)
+void UpdateP(std::vector<double> &p, const std::vector<double> &r, double beta) {
+  int n = static_cast<int>(p.size());
   for (int i = 0; i < n; ++i) {
-    double sum = 0.0;
-    for (int j = 0; j < n; ++j) {
-      sum += mat[i * n + j] * p[j];
-    }
-    ap[i] = sum;
+    p[i] = r[i] + (beta * p[i]);
   }
 }
 
@@ -57,7 +58,16 @@ SmyshlaevASleCgTaskOMP::SmyshlaevASleCgTaskOMP(const InType &in) {
 bool SmyshlaevASleCgTaskOMP::ValidationImpl() {
   const auto &a = GetInput().A;
   const auto &b = GetInput().b;
-  return !a.empty() && a.size() == b.size() && a.size() == a[0].size();
+  if (a.empty() || b.empty()) {
+    return false;
+  }
+  if (a.size() != b.size()) {
+    return false;
+  }
+  if (a.size() != a[0].size()) {
+    return false;
+  }
+  return true;
 }
 
 bool SmyshlaevASleCgTaskOMP::PreProcessingImpl() {
@@ -66,15 +76,26 @@ bool SmyshlaevASleCgTaskOMP::PreProcessingImpl() {
   flat_A_.resize(n * n);
   for (size_t i = 0; i < n; ++i) {
     for (size_t j = 0; j < n; ++j) {
-      flat_A_[i * n + j] = a[i][j];
+      flat_A_[(i * n) + j] = a[i][j];
     }
   }
   return true;
 }
 
 bool SmyshlaevASleCgTaskOMP::RunImpl() {
+  std::vector<double> v_test1 = {1.0, 2.0, 3.0, 4.0};
+
+  double test_result = 0.0;
+  int s = 4;
+  int ind;
+#pragma omp parallel for default(none) private(ind) shared(s) schedule(static) reduction(+ : test_result)
+  for (ind = 0; ind < s; ++ind) {
+    test_result += v_test1[ind] * v_test1[ind];
+  }
+  
   const auto &b = GetInput().b;
-  const int n = static_cast<int>(b.size());
+  size_t n = b.size();
+
   if (n == 0) {
     return true;
   }
@@ -85,39 +106,32 @@ bool SmyshlaevASleCgTaskOMP::RunImpl() {
   std::vector<double> result(n, 0.0);
 
   double rs_old = ComputeDotProduct(r, r);
-  const double eps = 1e-9;
 
-  if (std::sqrt(rs_old) < eps) {
+  const int max_iterations = static_cast<int>(n) * 2;
+  const double epsilon = 1e-9;
+
+  if (std::sqrt(rs_old) < epsilon) {
     GetOutput() = result;
     return true;
   }
-
-  // Получаем указатели заранее, чтобы не дергать .data() в цикле
-  const double *a_ptr = flat_A_.data();
-  double *p_ptr = p.data();
-  double *ap_ptr = ap.data();
-
-  for (int iter = 0; iter < n * 2; ++iter) {
-    // Параллельный запуск самой тяжелой части
-    MultiplyParallel(a_ptr, p_ptr, ap_ptr, n);
+  for (int iter = 0; iter < max_iterations; ++iter) {
+    ComputeAp(flat_A_, p, ap, n);
 
     double p_ap = ComputeDotProduct(p, ap);
+
     if (std::abs(p_ap) < 1e-15) {
       break;
     }
 
     double alpha = rs_old / p_ap;
-    double rs_new = UpdateRes(result, r, p, ap, alpha);
+    double rs_new = UpdateResultAndResidual(result, r, p, ap, alpha);
 
-    if (std::sqrt(rs_new) < eps) {
+    if (std::sqrt(rs_new) < epsilon) {
       break;
     }
 
     double beta = rs_new / rs_old;
-    // Обновляем p последовательно
-    for (int i = 0; i < n; ++i) {
-      p[i] = r[i] + beta * p[i];
-    }
+    UpdateP(p, r, beta);
 
     rs_old = rs_new;
   }
