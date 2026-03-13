@@ -10,6 +10,40 @@
 
 namespace smyshlaev_a_sle_cg_seq {
 
+namespace {
+
+// Вспомогательные операции работают последовательно, чтобы не раздувать
+// когнитивную сложность и не делать лишних вложенных OMP регионов.
+double ComputeDotProduct(const std::vector<double> &v1, const std::vector<double> &v2) {
+  double result = 0.0;
+  int n = static_cast<int>(v1.size());
+  for (int i = 0; i < n; ++i) {
+    result += v1[i] * v2[i];
+  }
+  return result;
+}
+
+double UpdateResultAndResidual(std::vector<double> &result, std::vector<double> &r, const std::vector<double> &p,
+                               const std::vector<double> &ap, double alpha) {
+  double rs_new = 0.0;
+  int n = static_cast<int>(result.size());
+  for (int i = 0; i < n; ++i) {
+    result[i] += alpha * p[i];
+    r[i] -= alpha * ap[i];
+    rs_new += r[i] * r[i];
+  }
+  return rs_new;
+}
+
+void UpdateP(std::vector<double> &p, const std::vector<double> &r, double beta) {
+  int n = static_cast<int>(p.size());
+  for (int i = 0; i < n; ++i) {
+    p[i] = r[i] + (beta * p[i]);
+  }
+}
+
+}  // namespace
+
 SmyshlaevASleCgTaskOMP::SmyshlaevASleCgTaskOMP(const InType &in) {
   SetTypeOfTask(GetStaticTypeOfTask());
   GetInput() = in;
@@ -55,10 +89,7 @@ bool SmyshlaevASleCgTaskOMP::RunImpl() {
   std::vector<double> ap(n, 0.0);
   std::vector<double> result(n, 0.0);
 
-  double rs_old = 0.0;
-  for (int i = 0; i < n; ++i) {
-    rs_old += r[i] * r[i];
-  }
+  double rs_old = ComputeDotProduct(r, r);
 
   const int max_iterations = n * 2;
   const double epsilon = 1e-9;
@@ -67,82 +98,36 @@ bool SmyshlaevASleCgTaskOMP::RunImpl() {
     GetOutput() = result;
     return true;
   }
-
-  // Делаем локальную ссылку на поле класса, чтобы MSVC разрешил передать её в shared()
-  const std::vector<double> &local_A = flat_A_;
-
-  double p_ap = 0.0;
-  double rs_new = 0.0;
-  double alpha = 0.0;
-  double beta = 0.0;
-  bool converged = false;
-
-  // Один parallel region. Никаких утечек памяти (Valgrind) и максимальная скорость.
-#pragma omp parallel default(none) \
-    shared(n, r, p, ap, result, local_A, rs_old, p_ap, rs_new, alpha, beta, converged, max_iterations, epsilon)
-  {
-    for (int iter = 0; iter < max_iterations; ++iter) {
-#pragma omp single
-      p_ap = 0.0;
-
-      // 1. Вычисляем A * p
-#pragma omp for schedule(static)
-      for (int i = 0; i < n; ++i) {
-        double sum = 0.0;
-        for (int j = 0; j < n; ++j) {
-          sum += local_A[(i * n) + j] * p[j];
-        }
-        ap[i] = sum;
+  const std::vector<double> &local_a = flat_A_;
+  for (int iter = 0; iter < max_iterations; ++iter) {
+    // БЕЗУСЛОВНО выполняем самую тяжелую операцию (O(N^2)) параллельно
+#pragma omp parallel for default(none) shared(n, local_a, p, ap) schedule(static)
+    for (int i = 0; i < n; ++i) {
+      double sum = 0.0;
+      for (int j = 0; j < n; ++j) {
+        sum += local_a[(i * n) + j] * p[j];
       }
-
-      // 2. Скалярное произведение (с легальным reduction)
-#pragma omp for schedule(static) reduction(+ : p_ap)
-      for (int i = 0; i < n; ++i) {
-        p_ap += p[i] * ap[i];
-      }
-
-#pragma omp single
-      {
-        if (std::abs(p_ap) < 1e-15) {
-          converged = true;
-        } else {
-          alpha = rs_old / p_ap;
-        }
-        rs_new = 0.0;
-      }
-
-      if (converged) {
-        break;
-      }
-
-      // 3. Обновление векторов и расчет новой невязки (с reduction)
-#pragma omp for schedule(static) reduction(+ : rs_new)
-      for (int i = 0; i < n; ++i) {
-        result[i] += alpha * p[i];
-        r[i] -= alpha * ap[i];
-        rs_new += r[i] * r[i];
-      }
-
-#pragma omp single
-      {
-        if (std::sqrt(rs_new) < epsilon) {
-          converged = true;
-        } else {
-          beta = rs_new / rs_old;
-          rs_old = rs_new;
-        }
-      }
-
-      if (converged) {
-        break;
-      }
-
-      // 4. Обновление направления
-#pragma omp for schedule(static)
-      for (int i = 0; i < n; ++i) {
-        p[i] = r[i] + (beta * p[i]);
-      }
+      ap[i] = sum;
     }
+
+    // Остальные операции (O(N)) считаются через вызовы функций
+    double p_ap = ComputeDotProduct(p, ap);
+
+    if (std::abs(p_ap) < 1e-15) {
+      break;
+    }
+
+    double alpha = rs_old / p_ap;
+    double rs_new = UpdateResultAndResidual(result, r, p, ap, alpha);
+
+    if (std::sqrt(rs_new) < epsilon) {
+      break;
+    }
+
+    double beta = rs_new / rs_old;
+    UpdateP(p, r, beta);
+
+    rs_old = rs_new;
   }
 
   GetOutput() = result;
