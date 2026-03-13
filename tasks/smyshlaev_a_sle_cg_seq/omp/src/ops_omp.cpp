@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <iostream>
 #include <vector>
 
 #include "smyshlaev_a_sle_cg_seq/common/include/common.hpp"
@@ -92,7 +93,8 @@ bool SmyshlaevASleCgTaskOMP::RunImpl() {
   for (ind = 0; ind < s; ++ind) {
     test_result += v_test1[ind] * v_test1[ind];
   }
-  
+
+  std::cout << test_result << '\n';
   const auto &b = GetInput().b;
   size_t n = b.size();
 
