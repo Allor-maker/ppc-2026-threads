@@ -1,13 +1,13 @@
-#include "smyshlaev_a_sle_cg_seq/tbb/include/ops_tbb.hpp" // Изменено на tbb
+#include "smyshlaev_a_sle_cg_seq/tbb/include/ops_tbb.hpp"  // Изменено на tbb
+
+#include <tbb/tbb.h>
 
 #include <cmath>
 #include <cstddef>
-#include <vector>
 #include <numeric>
+#include <vector>
 
-#include <tbb/tbb.h>
 #include "oneapi/tbb/parallel_for.h"
-
 #include "smyshlaev_a_sle_cg_seq/common/include/common.hpp"
 #include "util/include/util.hpp"
 
@@ -17,21 +17,18 @@ namespace {
 
 double ComputeDotProduct(const std::vector<double> &v1, const std::vector<double> &v2, int /*num_threads*/) {
   int n = static_cast<int>(v1.size());
-  return tbb::parallel_reduce(
-      tbb::blocked_range<int>(0, n), 
-      0.0,
-      [&](const tbb::blocked_range<int>& range, double init) -> double {
-        for (int i = range.begin(); i != range.end(); ++i) {
-          init += v1[i] * v2[i];
-        }
-        return init;
-      },
-      std::plus<double>());
+  return tbb::parallel_reduce(tbb::blocked_range<int>(0, n), 0.0,
+                              [&](const tbb::blocked_range<int> &range, double init) -> double {
+    for (int i = range.begin(); i != range.end(); ++i) {
+      init += v1[i] * v2[i];
+    }
+    return init;
+  }, std::plus<double>());
 }
 
 void ComputeAp(const std::vector<double> &matrix, const std::vector<double> &p, std::vector<double> &ap, int n,
                int /*num_threads*/) {
-  tbb::parallel_for(tbb::blocked_range<int>(0, n), [&](const tbb::blocked_range<int>& range) {
+  tbb::parallel_for(tbb::blocked_range<int>(0, n), [&](const tbb::blocked_range<int> &range) {
     for (int i = range.begin(); i != range.end(); ++i) {
       double sum = 0.0;
       for (int j = 0; j < n; ++j) {
@@ -45,30 +42,26 @@ void ComputeAp(const std::vector<double> &matrix, const std::vector<double> &p, 
 double UpdateResultAndResidual(std::vector<double> &result, std::vector<double> &r, const std::vector<double> &p,
                                const std::vector<double> &ap, double alpha, int /*num_threads*/) {
   int n = static_cast<int>(result.size());
-  return tbb::parallel_reduce(
-      tbb::blocked_range<int>(0, n), 
-      0.0,
-      [&](const tbb::blocked_range<int>& range, double init) -> double {
-        for (int i = range.begin(); i != range.end(); ++i) {
-          result[i] += alpha * p[i];
-          r[i] -= alpha * ap[i];
-          init += r[i] * r[i];
-        }
-        return init;
-      },
-      std::plus<double>());
+  return tbb::parallel_reduce(tbb::blocked_range<int>(0, n), 0.0,
+                              [&](const tbb::blocked_range<int> &range, double init) -> double {
+    for (int i = range.begin(); i != range.end(); ++i) {
+      result[i] += alpha * p[i];
+      r[i] -= alpha * ap[i];
+      init += r[i] * r[i];
+    }
+    return init;
+  }, std::plus<double>());
 }
 
 void UpdateP(std::vector<double> &p, const std::vector<double> &r, double beta, int /*num_threads*/) {
   int n = static_cast<int>(p.size());
-  tbb::parallel_for(tbb::blocked_range<int>(0, n), [&](const tbb::blocked_range<int>& range) {
+  tbb::parallel_for(tbb::blocked_range<int>(0, n), [&](const tbb::blocked_range<int> &range) {
     for (int i = range.begin(); i != range.end(); ++i) {
       p[i] = r[i] + (beta * p[i]);
     }
   });
 }
 
-// Последовательные версии (оставлены без изменений)
 double ComputeDotProduct(const std::vector<double> &v1, const std::vector<double> &v2) {
   double result = 0.0;
   int n = static_cast<int>(v1.size());
@@ -184,7 +177,6 @@ bool SmyshlaevASleCgTaskTBB::RunSequential() {
 }
 
 bool SmyshlaevASleCgTaskTBB::RunParallel(int num_threads) {
-  // Устанавливаем лимит потоков для TBB на время выполнения этой функции
   tbb::global_control thread_limit(tbb::global_control::max_allowed_parallelism, num_threads);
 
   const auto &b = GetInput().b;
@@ -194,17 +186,13 @@ bool SmyshlaevASleCgTaskTBB::RunParallel(int num_threads) {
   std::vector<double> ap(n, 0.0);
   std::vector<double> result(n, 0.0);
 
-  // Параллельная редукция вместо OMP reduction
-  double rs_old = tbb::parallel_reduce(
-      tbb::blocked_range<int>(0, n),
-      0.0,
-      [&](const tbb::blocked_range<int>& range, double init) -> double {
-        for (int i = range.begin(); i != range.end(); ++i) {
-          init += r[i] * r[i];
-        }
-        return init;
-      },
-      std::plus<double>());
+  double rs_old = tbb::parallel_reduce(tbb::blocked_range<int>(0, n), 0.0,
+                                       [&](const tbb::blocked_range<int> &range, double init) -> double {
+    for (int i = range.begin(); i != range.end(); ++i) {
+      init += r[i] * r[i];
+    }
+    return init;
+  }, std::plus<double>());
 
   const double epsilon = 1e-9;
   if (std::sqrt(rs_old) < epsilon) {
