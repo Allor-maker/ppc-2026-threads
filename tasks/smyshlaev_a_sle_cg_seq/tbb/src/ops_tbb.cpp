@@ -15,7 +15,7 @@ namespace smyshlaev_a_sle_cg_seq {
 
 namespace {
 
-double ComputeDotProduct_TBB(const std::vector<double> &v1, const std::vector<double> &v2) {
+double ComputeDotProductTbb(const std::vector<double> &v1, const std::vector<double> &v2) {
   int n = static_cast<int>(v1.size());
   return tbb::parallel_reduce(tbb::blocked_range<int>(0, n), 0.0,
                               [&](const tbb::blocked_range<int> &range, double init) -> double {
@@ -26,7 +26,7 @@ double ComputeDotProduct_TBB(const std::vector<double> &v1, const std::vector<do
   }, std::plus<>());
 }
 
-void ComputeAp_TBB(const std::vector<double> &matrix, const std::vector<double> &p, std::vector<double> &ap, int n) {
+void ComputeApTbb(const std::vector<double> &matrix, const std::vector<double> &p, std::vector<double> &ap, int n) {
   tbb::parallel_for(tbb::blocked_range<int>(0, n), [&](const tbb::blocked_range<int> &range) {
     for (int i = range.begin(); i != range.end(); ++i) {
       double sum = 0.0;
@@ -38,8 +38,8 @@ void ComputeAp_TBB(const std::vector<double> &matrix, const std::vector<double> 
   });
 }
 
-double UpdateResultAndResidual_TBB(std::vector<double> &result, std::vector<double> &r, const std::vector<double> &p,
-                                   const std::vector<double> &ap, double alpha) {
+double UpdateResultAndResidualTbb(std::vector<double> &result, std::vector<double> &r, const std::vector<double> &p,
+                                  const std::vector<double> &ap, double alpha) {
   int n = static_cast<int>(result.size());
   return tbb::parallel_reduce(tbb::blocked_range<int>(0, n), 0.0,
                               [&](const tbb::blocked_range<int> &range, double init) -> double {
@@ -52,7 +52,7 @@ double UpdateResultAndResidual_TBB(std::vector<double> &result, std::vector<doub
   }, std::plus<>());
 }
 
-void UpdateP_TBB(std::vector<double> &p, const std::vector<double> &r, double beta) {
+void UpdatePTbb(std::vector<double> &p, const std::vector<double> &r, double beta) {
   int n = static_cast<int>(p.size());
   tbb::parallel_for(tbb::blocked_range<int>(0, n), [&](const tbb::blocked_range<int> &range) {
     for (int i = range.begin(); i != range.end(); ++i) {
@@ -201,20 +201,20 @@ bool SmyshlaevASleCgTaskTBB::RunParallel(int num_threads) {
 
   const int max_iterations = n * 2;
   for (int iter = 0; iter < max_iterations; ++iter) {
-    ComputeAp_TBB(flat_A_, p, ap, n);
-    double p_ap = ComputeDotProduct_TBB(p, ap);
+    ComputeApTbb(flat_A_, p, ap, n);
+    double p_ap = ComputeDotProductTbb(p, ap);
     if (std::abs(p_ap) < 1e-15) {
       break;
     }
 
     double alpha = rs_old / p_ap;
-    double rs_new = UpdateResultAndResidual_TBB(result, r, p, ap, alpha);
+    double rs_new = UpdateResultAndResidualTbb(result, r, p, ap, alpha);
     if (std::sqrt(rs_new) < epsilon) {
       break;
     }
 
     double beta = rs_new / rs_old;
-    UpdateP_TBB(p, r, beta);
+    UpdatePTbb(p, r, beta);
     rs_old = rs_new;
   }
 
