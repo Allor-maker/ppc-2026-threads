@@ -7,12 +7,12 @@
 
 namespace smyshlaev_a_sle_cg_seq {
 
-class SmyshlaevASleCgTaskOMP : public BaseTask {
+class SmyshlaevASleCgTaskTBB : public BaseTask {
  public:
   static constexpr ppc::task::TypeOfTask GetStaticTypeOfTask() {
     return ppc::task::TypeOfTask::kOMP;
   }
-  explicit SmyshlaevASleCgTaskOMP(const InType &in);
+  explicit SmyshlaevASleCgTaskTBB(const InType &in);
 
  private:
   std::vector<double> flat_A_;
