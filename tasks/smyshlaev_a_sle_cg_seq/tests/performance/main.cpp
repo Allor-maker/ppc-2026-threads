@@ -78,8 +78,8 @@ TEST_P(SmyshlaevASleCgPerfTests, RunPerfModes) {
 
 namespace {
 
-const auto kAllPerfTasks =
-    ppc::util::MakeAllPerfTasks<InType, SmyshlaevASleCgTaskSEQ>(PPC_SETTINGS_smyshlaev_a_sle_cg_seq);
+const auto kAllPerfTasks = ppc::util::MakeAllPerfTasks<InType, SmyshlaevASleCgTaskSEQ, SmyshlaevASleCgTaskTBB>(
+    PPC_SETTINGS_smyshlaev_a_sle_cg_seq);
 
 const auto kGtestValues = ppc::util::TupleToGTestValues(kAllPerfTasks);
 
