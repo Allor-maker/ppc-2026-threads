@@ -4,7 +4,7 @@
 
 #include <cmath>
 #include <cstddef>
-#include <numeric>
+#include <functional>
 #include <vector>
 
 #include "oneapi/tbb/parallel_for.h"
@@ -23,7 +23,7 @@ double ComputeDotProduct_TBB(const std::vector<double> &v1, const std::vector<do
       init += v1[i] * v2[i];
     }
     return init;
-  }, std::plus<double>());
+  }, std::plus<>());
 }
 
 void ComputeAp_TBB(const std::vector<double> &matrix, const std::vector<double> &p, std::vector<double> &ap, int n) {
@@ -49,7 +49,7 @@ double UpdateResultAndResidual_TBB(std::vector<double> &result, std::vector<doub
       init += r[i] * r[i];
     }
     return init;
-  }, std::plus<double>());
+  }, std::plus<>());
 }
 
 void UpdateP_TBB(std::vector<double> &p, const std::vector<double> &r, double beta) {
@@ -191,7 +191,7 @@ bool SmyshlaevASleCgTaskTBB::RunParallel(int num_threads) {
       init += r[i] * r[i];
     }
     return init;
-  }, std::plus<double>());
+  }, std::plus<>());
 
   const double epsilon = 1e-9;
   if (std::sqrt(rs_old) < epsilon) {
